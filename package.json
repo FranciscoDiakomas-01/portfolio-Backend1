@@ -3,9 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "node ./dist/server.js",
-    "build": "npx tsup ./src",
-    "dev": "tsup ./src --watch"
+    "start": "node ./dist/server.js"
   },
   "keywords": [],
   "author": "",
