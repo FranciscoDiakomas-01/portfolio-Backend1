@@ -1,280 +1,96 @@
-"use strict";
-var __create = Object.create;
-var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
 
-// src/server.ts
-var import_express = __toESM(require("express"));
-var import_cors = __toESM(require("cors"));
+import express from "express";
+import cors from "cors";
+import db, { addProject } from "./db.js";
+import authMiddleware from './middlewares/verify.js';
 
-// src/middleware/verifyPassword.ts
-var import_dotenv = __toESM(require("dotenv"));
-import_dotenv.default.config();
-function VerifyPassWord(req, res, next) {
+const app = express();
+const PORT = process.env.PORT || 8000;
+
+app.use(cors());
+app.use(express.json());
+
+// Create a new project
+
+app.post("/projects",authMiddleware , async (req, res) => {
+  const { title, description, technologies, link, repo } = req.body;
   try {
-    const password = String(req.headers["authorization"]);
-    if (password == String(process.env.PASSWORD)) {
-      next();
-      return;
-    } else {
-      res.status(400).json({
-        error: "wrong password"
-      });
-    }
-  } catch (error) {
-    console.log(error);
-  }
-}
-
-// src/db.ts
-var import_node_fs = __toESM(require("fs"));
-
-// src/services/search.ts
-function SeachProjectById(id, projects) {
-  const index = projects.findIndex((project) => {
-    return project.id == id;
-  });
-  if (index < 0) {
-    return false;
-  }
-  return projects[index];
-}
-function SeacrhProjectbyTitle(title, projects) {
-  const index = projects.findIndex((project) => {
-    return project.title == title;
-  });
-  if (index < 0) {
-    return false;
-  }
-  return true;
-}
-
-// src/db.ts
-function getProjects() {
-  let Projects = [];
-  try {
-    return JSON.parse(import_node_fs.default.readFileSync(process.cwd() + "/database/db.json").toString());
-  } catch (error) {
-    return [];
-  }
-}
-function getProjectById(id) {
-  try {
-    const Projcts = JSON.parse(import_node_fs.default.readFileSync(process.cwd() + "/database/db.json").toString());
-    const project = SeachProjectById(id, Projcts);
-    return project;
-  } catch (error) {
-    return [];
-  }
-}
-function createProject(project) {
-  try {
-    let Projcts = JSON.parse(import_node_fs.default.readFileSync(process.cwd() + "/database/db.json").toString());
-    const isInList = SeacrhProjectbyTitle(project.title, Projcts);
-    if (isInList) {
-      return "already exist";
-    }
-    Projcts.push(project);
-    let content = "";
-    Projcts.forEach((pro, index) => {
-      const project2 = `
-            {
-                "id": "${crypto.randomUUID()}",
-                "title": "${pro.title}",
-                "deploy": "${pro.deploy}",
-                "category" : "${pro.category}",
-                "repo": "${pro.repo}",
-                "description": "${pro.description}",
-                "tecnologies" : ${JSON.stringify(pro.tecnologies)}
-            }`;
-      if (index == Projcts.length - 1) {
-        content += project2 + "\n";
-        return;
-      }
-      content += project2 + ",";
+    const result = await addProject({
+      title,
+      description,
+      technologies,
+      link,
+      repo,
     });
-    import_node_fs.default.writeFileSync(process.cwd() + "/database/db.json", `[ ${content} ]`);
-    return "created";
+    return res.status(201).json({
+      data : "created"
+    });
   } catch (error) {
-    const fistProject = `
-            {
-                "id": "${crypto.randomUUID()}", 
-                "title": "${project.title}",
-                "deploy": "${project.deploy}",
-                "category" : "${project.category}",
-                "repo": "${project.repo}",
-                "description": "${project.description}",
-                "tecnologies" : ${JSON.stringify(project.tecnologies)}
-            }`;
-    import_node_fs.default.writeFileSync(process.cwd() + "/database/db.json", `[ ${fistProject} 
-]`);
-    return "created";
+    return res.status(500).json({ error: "Erro ao adicionar projeto" });
   }
-}
-function Update(id, data) {
+});
+
+
+
+// Get all projects
+app.get("/projects", async (req, res) => {
   try {
-    let Projcts = JSON.parse(
-      import_node_fs.default.readFileSync(process.cwd() + "/database/db.json").toString()
+    const result = await db.any("SELECT * FROM projects");
+    res.json({data : result});
+  } catch (error) {
+    console.error("Erro ao buscar projetos:", error);
+    res.status(500).json({ error: "Erro ao buscar projetos" });
+  }
+});
+
+// Get a single project by ID
+app.get("/projects/:id", async (req, res) => {
+  const { id } = req.params;
+  try {
+    const result = await db.oneOrNone("SELECT * FROM projects WHERE id = $1", [
+      id,
+    ]);
+    if (!result) {
+      return res.status(404).json({ error: "Projeto não encontrado" });
+    }
+    res.json(result);
+  } catch (error) {
+    console.error("Erro ao buscar projeto:", error);
+    res.status(500).json({ error: "Erro ao buscar projeto" });
+  }
+});
+
+// Update a project by ID
+app.put("/projects/:id",authMiddleware , async (req, res) => {
+  const { id } = req.params;
+  const { title, description, technologies, link, repo } = req.body;
+  try {
+    const result = await db.one(
+      "UPDATE projects SET title = $1, description = $2, tecnologies = $3, link = $4, repo = $5 WHERE id = $6 RETURNING *",
+      [title, description, technologies, link, repo, id]
     );
-    let project = Projcts.find((pro) => {
-      return pro.id == id;
-    });
-    if (project == void 0 || project == null) {
-      return "not found";
-    }
-    project.repo = data.repo;
-    project.title = data.title;
-    project.description = data.description;
-    project.deploy = data.deploy;
-    project.tecnologies = data.tecnologies;
-    let content = "";
-    Projcts.forEach((pro, index) => {
-      const project2 = `
-            {
-                "id": "${pro.id}",
-                "title": "${pro.title}",
-                "deploy": "${pro.deploy}",
-                "category" : "${pro.category}",
-                "repo": "${pro.repo}",
-                "description": "${pro.description}",
-                "tecnologies" : ${JSON.stringify(pro.tecnologies)}
-            }`;
-      if (index == Projcts.length - 1) {
-        content += project2 + "\n";
-        return;
-      }
-      content += project2 + ",";
-    });
-    import_node_fs.default.writeFileSync(process.cwd() + "/database/db.json", `[ ${content} ]`);
-    return "updated";
+    res.json(result);
   } catch (error) {
-    return "empty list";
+    console.error("Erro ao atualizar projeto:", error);
+    res.status(500).json({ error: "Erro ao atualizar projeto" });
   }
-}
-function deleteById(id) {
-  try {
-    const Projcts = JSON.parse(import_node_fs.default.readFileSync(process.cwd() + "/database/db.json").toString());
-    const project = SeachProjectById(id, Projcts);
-    if (project) {
-      const index = Projcts.findIndex((pro) => {
-        return pro.id == id;
-      });
-      Projcts.splice(index, 1);
-      let content = "";
-      Projcts.forEach((pro, index2) => {
-        const project2 = `
-            {
-                "id": "${pro.id}",
-                "title": "${pro.title}",
-                "deploy": "${pro.deploy}",
-                "category" : "${pro.category}",
-                "repo": "${pro.repo}",
-                "description": "${pro.description}",
-                "tecnologies" : ${JSON.stringify(pro.tecnologies)}
-            }`;
-        if (index2 == Projcts.length - 1) {
-          content += project2 + "\n";
-          return;
-        }
-        content += project2 + ",";
-      });
-      import_node_fs.default.writeFileSync(process.cwd() + "/database/db.json", `[ ${content} ]`);
-      return "deleted";
-    }
-    return "not found";
-  } catch (error) {
-    return "empty list";
-  }
-}
+});
 
-// src/services/isAProjects.ts
-var import_validator = __toESM(require("validator"));
-function isAvailableProject(project) {
+// Delete a project by ID
+app.delete("/projects/:id", authMiddleware , async (req, res) => {
+  const { id } = req.params;
   try {
-    if (project.title.length >= 2 && project.description.length <= 170 && project.description.length >= 2 && import_validator.default.isURL(project.repo) && project.category) {
-      if (project.deploy && !import_validator.default.isURL(project.deploy)) {
-        return false;
-      }
-      const empty = project.tecnologies.some((tec) => {
-        return isEmpty(tec);
-      });
-      if (!empty) {
-        return true;
-      } else {
-        return false;
-      }
+    const result = await db.result("DELETE FROM projects WHERE id = $1", [id]);
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: "Projeto não encontrado" });
     }
-    return false;
+    res.json({ message: "Projeto deletado com sucesso" });
   } catch (error) {
-    return false;
+    console.error("Erro ao deletar projeto:", error);
+    res.status(500).json({ error: "Erro ao deletar projeto" });
   }
-}
-function isEmpty(str) {
-  return str.length == 0;
-}
+});
 
-// src/server.ts
-var server = (0, import_express.default)();
-var port = process.env.PORT || 8e3;
-server.use(import_express.default.json());
-server.use((0, import_cors.default)());
-server.use(import_express.default.urlencoded({ extended: true }));
-server.get("/projects", (req, res) => {
-  const data = getProjects();
-  res.json({ data });
-});
-server.get("/project/:id", (req, res) => {
-  const id = String(req.params.id);
-  const data = getProjectById(id);
-  res.json({ data });
-});
-server.delete("/project/:id", VerifyPassWord, (req, res) => {
-  const id = String(req.params.id);
-  const data = deleteById(id);
-  res.json({ data });
-});
-server.post("/project", VerifyPassWord, (req, res) => {
-  const validation = isAvailableProject(req.body);
-  if (validation) {
-    const result = createProject(req.body);
-    res.status(result == "already exist" ? 400 : 201).json({ data: result });
-    return;
-  } else {
-    res.status(400).json({ body: req.body, error: "invalid project" });
-  }
-});
-server.put("/project/:id", VerifyPassWord, (req, res) => {
-  const id = String(req.params.id);
-  const validation = isAvailableProject(req.body);
-  if (validation) {
-    const result = Update(id, req.body);
-    res.status(result == "empty list" ? 200 : result == "updated" ? 201 : 400).json({
-      result
-    });
-    return;
-  } else {
-    res.status(400).json({ body: req.body, error: "invalid project" });
-  }
-});
-server.listen(port, () => {
-  console.log("server running!");
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
